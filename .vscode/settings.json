@@ -1,0 +1,20 @@
+{
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3306,
+            "driver": "MySQL",
+            "username": "root",
+            "connectionTimeout": 30,
+            "database": "tinywebserver",
+            "name": "webserver"
+        }
+    ],
+    "cmake.sourceDirectory": "/home/lx/TinyWebServer-self/tiny-webserver"
+}

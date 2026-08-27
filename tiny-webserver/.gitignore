@@ -1,0 +1,15 @@
+# CMake 构建产物
+build/
+cmake-build-*/
+
+# 可执行文件
+server
+test_sync
+
+# 编译中间文件
+*.o
+*.a
+*.so
+
+# 日志文件
+*_ServerLog
