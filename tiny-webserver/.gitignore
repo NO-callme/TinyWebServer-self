@@ -13,3 +13,5 @@ test_sync
 
 # 日志文件
 *_ServerLog
+*.log_*
+*.log

@@ -26,3 +26,4 @@ add_executable(test_locker tests/test_locker.cpp)
 
 add_executable(test_block_queue tests/test_block_queue.cpp)
 
+add_executable(test_log tests/test_log.cpp log/log.cpp)

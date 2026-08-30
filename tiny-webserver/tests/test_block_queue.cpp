@@ -55,16 +55,21 @@ void test_multi_producer_consumer() {
 //测试阻塞语义 pop()空队列然后主线程sleep()后push，验证消费者确实在等
 void test_block() {
     BlockQueue<int> blockQueue(1000);
-    std::atomic<bool> isPushed(false);// 定义一个原子布尔类型变量 isPushed，初始值为 false
-    std::thread WaitEmpty([&blockQueue]{
+    std::atomic<bool> isPushed(false);
+
+    std::thread WaitEmpty([&blockQueue, &isPushed]{   // ← 捕获 &isPushed
         int val = 0;
         blockQueue.pop(val);
+        assert(val == 25);          // 顺便验证拿到的是 25
+        isPushed.store(true);       // ← 拿到数据后置 true
     });
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    assert(isPushed.load() == false);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    assert(isPushed.load() == false);   // push 之前，消费者还阻塞着
     blockQueue.push(25);
+
     WaitEmpty.join();
-    assert(isPushed.load() == true);
+    assert(isPushed.load() == true);    // 消费者确实拿到了
     std::cout << "test block queue block success\n";
 }
 

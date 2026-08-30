@@ -31,7 +31,7 @@ public:
     bool pop(T &item){
         std::unique_lock<std::mutex> lock(m_mutex);
         m_cond.wait(lock, [this](){return m_stop || !m_queue.empty();});
-        if(m_stop) return false;
+        if(m_queue.empty()) return false;
         item = m_queue.front();
         m_queue.pop();
         lock.unlock();
@@ -45,7 +45,7 @@ public:
         bool ok = m_cond.wait_for(lock, std::chrono::milliseconds(timeout), 
                                     [this](){return m_stop || !m_queue.empty();});
         if(!ok) return false;//超时
-        if(m_stop) return false;
+        if(m_queue.empty()) return false;
         item = m_queue.front();
         m_queue.pop();
         lock.unlock();
