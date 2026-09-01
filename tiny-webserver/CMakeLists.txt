@@ -29,3 +29,6 @@ add_executable(test_block_queue tests/test_block_queue.cpp)
 add_executable(test_log tests/test_log.cpp log/log.cpp)
 
 add_executable(test_timer tests/test_timer.cpp timer/lst_timer.cpp)
+
+add_executable(test_conn_pool tests/test_conn_pool.cpp sql_conn/sql_connection_pool.cpp)
+target_link_libraries(test_conn_pool ${MYSQL_LIB})
