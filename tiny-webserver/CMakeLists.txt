@@ -35,3 +35,6 @@ target_link_libraries(test_conn_pool ${MYSQL_LIB})
 
 add_executable(test_thread_pool tests/test_thread_pool.cpp sql_conn/sql_connection_pool.cpp)
 target_link_libraries(test_thread_pool ${MYSQL_LIB})
+
+# M6 验证：HTTP 主从状态机解析器（纯内存，不依赖 MySQL）
+add_executable(test_http_parser tests/test_http_parser.cpp http/http_parser.cpp)
