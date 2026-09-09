@@ -2,8 +2,7 @@
 build/
 cmake-build-*/
 
-# 可执行文件
-server
+# 可执行文件（编译产物在 build/ 下，已被上方 build/ 规则忽略）
 test_sync
 
 # 编译中间文件

@@ -2,9 +2,16 @@
 #define TIMER_LST_TIMER_H_
 
 #include <ctime>
+#include <netinet/in.h>
 
+class util_timer;  // 前向声明：client_data 里要用 util_timer* 指针
+
+// 连接的用户数据：定时器回调需要用这些信息关闭连接、从 epoll 移除
 struct client_data{
-    int sockfd;//先只放套接字，后面连接服务器再写完整结构体
+    sockaddr_in address;   // 客户端地址
+    int sockfd;            // 客户端套接字
+    int epollfd;           // 所属 epoll 实例（回调里 EPOLL_CTL_DEL 用）
+    util_timer* timer;     // 该连接对应的定时器（便于手动删除）
 };
 
 class util_timer{

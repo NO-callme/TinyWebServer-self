@@ -3,7 +3,7 @@
 #include <mysql/mysql.h>
 #include <cstdio>
 
-// 注意：下面用 snprintf 拼接 SQL，存在 SQL 注入风险（学习项目对齐经典实现）。
+// 注意：下面用 snprintf 拼接 SQL，存在 SQL 注入风险
 // 生产环境应该用预处理语句（mysql_stmt_prepare / bind）或 mysql_real_escape_string 转义输入。
 
 user_model::user_model(connection_pool* pool) : m_pool_(pool)

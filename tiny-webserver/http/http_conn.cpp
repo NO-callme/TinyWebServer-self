@@ -1,9 +1,11 @@
 #include "http_conn.h"
 
-#include <strings.h> // strcasecmp（MIME 表用）
+#include <strings.h>   // strcasecmp（MIME 表用）
+#include <sys/epoll.h> // EPOLLIN / EPOLLOUT
 #include <string>
 
 #include "db/user_model.h"
+#include "util/fd_util.h"
 
 
 // ---- 错误响应正文 ----
@@ -14,6 +16,8 @@ static const char* g_error_500_body = "There was an unusual problem serving the 
 
 // 静态成员定义：默认根目录是当前目录
 const char* http_conn::m_doc_root_ = ".";
+int http_conn::m_epollfd_ = -1;
+int http_conn::m_trig_mode_ = 1;   // 默认 ET
 
 
 // 根据文件扩展名返回 MIME 类型，未知扩展名一律 text/plain
@@ -88,6 +92,16 @@ void http_conn::set_doc_root(const char* root)
     m_doc_root_ = root;
 }
 
+void http_conn::set_epollfd(int epollfd)
+{
+    m_epollfd_ = epollfd;
+}
+
+void http_conn::set_trig_mode(int trig_mode)
+{
+    m_trig_mode_ = trig_mode;
+}
+
 void http_conn::init(int sockfd, const sockaddr_in &addr, connection_pool *conn_pool)
 {
     m_sockfd_ = sockfd;
@@ -135,6 +149,19 @@ bool http_conn::read_once()
         return false;
     }
     int bytes_read = 0;
+
+    // LT 模式：读一次即可，没读完 epoll 会再次通知
+    if (m_trig_mode_ == 0) {
+        bytes_read = recv(m_sockfd_, m_read_buf_ + m_read_idx_,
+                          READ_BUFFER_SIZE - 1 - m_read_idx_, 0);
+        if (bytes_read <= 0) {
+            return false;  // 对端关闭(0) 或出错(-1)
+        }
+        m_read_idx_ += bytes_read;
+        return true;
+    }
+
+    // ET 模式：必须循环 recv 直到 EAGAIN，否则可能漏数据
     while (true) {
         bytes_read = recv(m_sockfd_, m_read_buf_ + m_read_idx_,
                           READ_BUFFER_SIZE - 1 - m_read_idx_, 0);
@@ -152,13 +179,16 @@ bool http_conn::read_once()
     return true;
 }
 
-// 主入口：解析 → 生成响应 → 发送
+// 主入口（工作线程调用）：解析 → 生成响应 → 注册写事件。
+// 真正发送由主循环的 EPOLLOUT 分支调 write() 完成（半同步/半反应堆）。
 void http_conn::process()
 {
     http_parser::PARSE_RESULT ret = m_parser_.parse(m_read_buf_, m_read_idx_);
 
     if (ret == http_parser::PARSE_MORE) {
-        return;   // 数据还没收全，等下次读
+        // 请求还没收全，重新挂读事件，等下一批数据
+        modfd(m_epollfd_, m_sockfd_, EPOLLIN, m_trig_mode_);
+        return;
     }
     if (ret == http_parser::PARSE_ERROR) {
         build_error(400, "Bad Request", g_error_400_body);
@@ -167,9 +197,8 @@ void http_conn::process()
         do_request();
     }
 
-    if (!write()) {
-        close_conn();
-    }
+    // 响应已构造好，注册写事件（EPOLLONESHOT 会在主循环 write 后再重新挂载）
+    modfd(m_epollfd_, m_sockfd_, EPOLLOUT, m_trig_mode_);
 }
 
 // 根据解析出的 url 决定返回什么：静态文件，或 403/404/500
@@ -344,7 +373,9 @@ bool http_conn::write()
         int n = writev(m_sockfd_, m_iv_, m_iv_count_);
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return true;  // 没发完，稍后重试（M7 会挂 EPOLLOUT）
+                // 内核发送缓冲区满，没发完，继续监听写事件
+                modfd(m_epollfd_, m_sockfd_, EPOLLOUT, m_trig_mode_);
+                return true;
             }
             unmap();
             return false;  // 发送出错，关闭连接
@@ -366,10 +397,11 @@ bool http_conn::write()
         if (m_bytes_to_send_ <= 0) {
             unmap();
             if (m_parser_.linger()) {
-                init();   // keep-alive：重置状态，等下一个请求
+                init();   // keep-alive：重置状态，重新监听读
+                modfd(m_epollfd_, m_sockfd_, EPOLLIN, m_trig_mode_);
                 return true;
             }
-            return false;  // 关闭连接
+            return false;  // 短连接，发完就关
         }
     }
     return true;

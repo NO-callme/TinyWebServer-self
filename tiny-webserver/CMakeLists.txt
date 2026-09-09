@@ -18,8 +18,18 @@ include_directories(${CMAKE_SOURCE_DIR})
 # 查找 MySQL 客户端库（M4 里程碑才真正用到，这里先接上，找不到也不报错）
 find_library(MYSQL_LIB mysqlclient)
 
-# 最终服务器入口（M6 是临时驱动验证 http_conn，M7 之后才是真正的 epoll 启动流程）
-add_executable(server main.cpp http/http_conn.cpp http/http_parser.cpp db/user_model.cpp sql_conn/sql_connection_pool.cpp)
+# 最终服务器入口（M7：真正的 epoll 主循环 + 线程池 + 定时器 + 信号统一事件源）
+add_executable(server
+    main.cpp
+    server/server.cpp
+    util/fd_util.cpp
+    http/http_conn.cpp
+    http/http_parser.cpp
+    db/user_model.cpp
+    sql_conn/sql_connection_pool.cpp
+    timer/lst_timer.cpp
+    log/log.cpp
+)
 target_link_libraries(server ${MYSQL_LIB})
 
 # M1 验证 demo：同步原语 + 阻塞队列

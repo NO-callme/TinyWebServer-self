@@ -38,6 +38,9 @@ public:
 
     // 静态资源根目录（由 main/config 启动时设置一次）
     static void set_doc_root(const char* root);
+    // 全局 epoll 实例 + connfd 触发模式（由 server 启动时设置一次）
+    static void set_epollfd(int epollfd);
+    static void set_trig_mode(int trig_mode);
 
 private:
     void init();                             // 内部状态重置
@@ -82,6 +85,8 @@ private:
     connection_pool* m_conn_pool_;        // 数据库连接池（DAO 阶段用）
 
     static const char* m_doc_root_;       // 静态资源根目录
+    static int m_epollfd_;                // 全局 epoll 实例（process/write 里 rearm 用）
+    static int m_trig_mode_;              // connfd 触发模式 0=LT 1=ET
 };
 
 #endif // HTTP_HTTP_CONN_H
