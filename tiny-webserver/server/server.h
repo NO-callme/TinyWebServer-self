@@ -12,6 +12,7 @@
 #include "timer/lst_timer.h"
 #include "thread_pool/thread_pool.h"
 #include "sql_conn/sql_connection_pool.h"
+#include "config/config.h"
 
 // 触发模式：第一个字母是 listenfd，第二个是 connfd（LT=水平触发，ET=边沿触发）
 enum TRIGMode { LT_LT = 0, LT_ET, ET_LT, ET_ET };
@@ -34,8 +35,7 @@ public:
     ~Server();
 
     // 初始化：socket/bind/listen、epoll、信号、连接池、线程池、定时器
-    bool init(int port, const char* doc_root, int trig_mode, int thread_num,
-              const char* sql_user, const char* sql_passwd, const char* sql_dbname);
+    bool init(const Config& cfg);
 
     void event_loop();  // epoll 主循环（阻塞，直到收到退出信号）
 
@@ -66,6 +66,7 @@ private:
     int m_listen_trig_;  // listenfd 触发模式 0=LT 1=ET
     int m_conn_trig_;    // connfd 触发模式 0=LT 1=ET
     int m_thread_num_;
+    int m_close_log_;    // 0=开日志 1=关日志
 
     static int s_pipefd_[2];  // 统一事件源 socketpair（信号 → 事件）
 };

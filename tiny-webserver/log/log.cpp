@@ -125,6 +125,7 @@ void Log::write_to_file(const char* line)
     }
 
     fputs(line, m_fp);
+    fflush(m_fp);   // 立即刷到文件，方便 tail -f 实时查看（否则 stdio 缓冲到满/退出才落盘）
     m_count++;
 }
 

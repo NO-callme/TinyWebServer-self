@@ -21,6 +21,7 @@ find_library(MYSQL_LIB mysqlclient)
 # 最终服务器入口（M7：真正的 epoll 主循环 + 线程池 + 定时器 + 信号统一事件源）
 add_executable(server
     main.cpp
+    config/config.cpp
     server/server.cpp
     util/fd_util.cpp
     http/http_conn.cpp

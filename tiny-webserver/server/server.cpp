@@ -47,7 +47,7 @@ void Server::cb_func(client_data* user_data)
 Server::Server()
     : m_listenfd_(-1), m_epollfd_(-1), m_port_(0),
       m_conn_pool_(nullptr),
-      m_listen_trig_(0), m_conn_trig_(0), m_thread_num_(8)
+      m_listen_trig_(0), m_conn_trig_(0), m_thread_num_(8), m_close_log_(0)
 {
 }
 
@@ -61,9 +61,11 @@ Server::~Server()
     if (s_pipefd_[1] != 0) close(s_pipefd_[1]);
     if (m_epollfd_ != -1) close(m_epollfd_);
 
-    // 关闭所有还开着的客户端连接
-    for (int i = 0; i < MAX_FD; ++i) {
-        m_users_[i].close_conn();
+    // 关闭所有还开着的客户端连接（init 失败时 m_users_ 可能还没分配）
+    if (m_users_) {
+        for (int i = 0; i < MAX_FD; ++i) {
+            m_users_[i].close_conn();
+        }
     }
 
     // m_timer_lst_ 析构会释放剩余的定时器节点
@@ -73,24 +75,29 @@ Server::~Server()
 }
 
 
-bool Server::init(int port, const char* doc_root, int trig_mode, int thread_num,
-                  const char* sql_user, const char* sql_passwd, const char* sql_dbname)
+bool Server::init(const Config& cfg)
 {
-    m_port_ = port;
-    m_thread_num_ = thread_num;
+    m_port_ = cfg.port;
+    m_thread_num_ = cfg.thread_num;
+    m_close_log_ = cfg.close_log;
     // 拆分触发模式：高 1 位是 listenfd，低 1 位是 connfd
-    m_listen_trig_ = trig_mode / 2;   // 0=LT 1=ET
-    m_conn_trig_ = trig_mode % 2;     // 0=LT 1=ET
+    m_listen_trig_ = cfg.trig_mode / 2;   // 0=LT 1=ET
+    m_conn_trig_ = cfg.trig_mode % 2;     // 0=LT 1=ET
 
     // 1. 静态资源根目录 + http_conn 全局参数
-    http_conn::set_doc_root(doc_root);
+    http_conn::set_doc_root(cfg.doc_root.c_str());
 
-    // 2. 日志（同步模式，异步以后再说）
-    Log::get_instance()->init("./tinywebserver.log", 8192, 2000000, 0);
+    // 2. 日志（按配置决定开/关、同步/异步）
+    if (!cfg.close_log) {
+        // 异步模式传队列大小 > 0 触发，同步模式传 0
+        Log::get_instance()->init("./tinywebserver.log", 8192, 2000000,
+                                  cfg.async_log ? 1024 : 0);
+    }
 
     // 3. 数据库连接池
     m_conn_pool_ = connection_pool::get_instance();
-    m_conn_pool_->init("localhost", sql_user, sql_passwd, sql_dbname, 3306, 8);
+    m_conn_pool_->init(cfg.sql_host, cfg.sql_user, cfg.sql_passwd,
+                       cfg.sql_dbname, 3306, cfg.conn_pool_size);
 
     // 4. 线程池（半同步/半反应堆的「半同步」部分）
     m_thread_pool_.reset(new ThreadPool<http_conn>(m_conn_pool_, m_thread_num_, 10000));
@@ -112,7 +119,9 @@ bool Server::init(int port, const char* doc_root, int trig_mode, int thread_num,
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(m_port_);
     if (bind(m_listenfd_, (sockaddr*)&addr, sizeof(addr)) < 0) return false;
-    if (listen(m_listenfd_, 5) < 0) return false;
+    // backlog 调大：默认 5 在高并发下连接建立会被 SYN/accept 队列卡死，
+    // 大量连接 connect 超时。设成 1024 让内核有足够缓冲吸收连接突发。
+    if (listen(m_listenfd_, 1024) < 0) return false;
 
     // 7. epoll 实例
     m_epollfd_ = epoll_create(5);
@@ -134,11 +143,17 @@ bool Server::init(int port, const char* doc_root, int trig_mode, int thread_num,
     add_sig(SIGTERM, sig_handler);
     add_sig(SIGINT, sig_handler);
 
-    printf("[server] 启动：端口=%d 根目录=%s 触发模式=%s%s 线程数=%d\n",
-           m_port_, doc_root,
+    printf("[server] 启动：端口=%d 根目录=%s 触发模式=%s%s 线程数=%d 连接池=%d 日志=%s\n",
+           m_port_, cfg.doc_root.c_str(),
            m_listen_trig_ ? "ET" : "LT",
            m_conn_trig_ ? "ET" : "LT",
-           m_thread_num_);
+           m_thread_num_, cfg.conn_pool_size,
+           cfg.close_log ? "关" : (cfg.async_log ? "异步" : "同步"));
+
+    if (!m_close_log_) {
+        Log::get_instance()->write_log(LOG_INFO, "server start: port=%d thread=%d",
+                                       m_port_, m_thread_num_);
+    }
     return true;
 }
 
@@ -262,6 +277,10 @@ void Server::init_connection(int connfd, const sockaddr_in& addr)
     timer->expire = time(nullptr) + 3 * TIMESLOT;
     m_users_timer_[connfd].timer = timer;
     m_timer_lst_.add_timer(timer);
+
+    if (!m_close_log_) {
+        Log::get_instance()->write_log(LOG_INFO, "new connection fd=%d", connfd);
+    }
 }
 
 
@@ -280,6 +299,10 @@ void Server::close_connection(int sockfd)
     }
 
     m_users_[sockfd].close_conn();  // 真正 close(fd) 并置 m_sockfd_ = -1
+
+    if (!m_close_log_) {
+        Log::get_instance()->write_log(LOG_INFO, "close connection fd=%d", sockfd);
+    }
 }
 
 
